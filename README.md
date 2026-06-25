@@ -113,14 +113,6 @@ Below is the data stored in the config.json.
 
 > To stop the downloads, you can simply close the terminal window. This will terminate the program. Alternatively, you can try pressing CTRL+C on your keyboard, which will send a signal to the program to stop running.
 
-### I have tried following the FAQ above, but it didn't solve my problem. The problem I am experiencing is not listed in the FAQ.
-
-> If you are experiencing a problem that is not covered in the FAQ and you need assistance, it is welcome to open an issue on the [Issue Page](https://github.com/roogue/osu-collector-dl/issues) or [Bug Report Form](https://forms.gle/KoHtcmsj94ahKFJy6). After navigating to the issue page, click the green "New issue" button on the page and follow the instructions to describe your problem in as much detail as possible. This will allow the maintainers of the project to better understand and help troubleshoot the issue you are experiencing.
-
-## Feedback
-
-It would be nice to hear feedback from you! [Feedback Form](https://forms.gle/bCZ25JVdQSKvgbWD9)
-
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](https://choosealicense.com/licenses/mit/) file for details.
