@@ -4,5 +4,7 @@
   "intervalCap": 50,
   "logSize": 15,
   "directory": "",
-  "mode": 1
+  "mode": 1,
+  "mirrors": ["catboy", "osuDirect"],
+  "noVideoFallback": true
 }

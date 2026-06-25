@@ -46,8 +46,8 @@ export enum Msg {
 
   RESOURCE_UNAVAILBALE = "The download request is blocked in your location for legal reasons, unable to download collection.",
 
-  INPUT_ID = "Enter the collection ID you want to download:",
-  INPUT_ID_ERR = "ID should be a number, Ex: '44' (without the quote)",
+  INPUT_ID = "Enter the collection ID or osu!collector URL you want to download. Press Enter to use your clipboard:",
+  INPUT_ID_ERR = "Input or clipboard should be a number or osu!collector collection URL, Ex: '44' or 'https://osucollector.com/collections/44/speed-practice' (without the quote)",
 
   INPUT_MODE_DESCRIPTION = "1: Download Beatmap Set only\n2: Download Beatmap Set + Generate .osdb\n3: Generate .osdb only\n",
   INPUT_MODE = "Please select a working mode. (Default: {{mode}}):",
@@ -71,6 +71,7 @@ export enum Msg {
   DOWNLOADING_FILE = "Downloading [{{id}}] {{name}}",
   RETRYING_DOWNLOAD = "Retrying [{{id}}] {{name}}",
   DOWNLOADED_FILE = "Downloaded [{{id}}] {{name}}",
+  SKIPPED_FILE = "Skipped [{{id}}] {{name}}, unavailable on configured mirrors: {{reason}}",
   DOWNLOAD_FILE_FAILED = "Failed when downloading [{{id}}] {{name}}, due to error: {{error}}",
   RATE_LIMITED = "Download request rate is limited, cooling down for one minute...",
   DOWNLOAD_COMPLETED = "Download completed.",

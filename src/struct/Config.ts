@@ -1,9 +1,12 @@
 import { existsSync, writeFileSync } from "fs";
 import path from "path";
 import Logger from "../core/Logger";
-import type { Json, JsonValues, WorkingMode } from "../types";
+import type { DownloadMirror, Json, JsonValues, WorkingMode } from "../types";
 import Util from "../util";
 import OcdlError from "./OcdlError";
+
+const DEFAULT_MIRRORS: DownloadMirror[] = ["catboy", "osuDirect"];
+const VALID_MIRRORS = new Set<DownloadMirror>(DEFAULT_MIRRORS);
 
 export default class Config {
   // Whether the download process should be done in parallel
@@ -21,6 +24,10 @@ export default class Config {
   mode: WorkingMode;
   // The length of the log when downloading beatmapsets
   logSize: number;
+  // Download mirrors to try, in order
+  mirrors: DownloadMirror[];
+  // Whether to retry downloads without video when supported by the mirror
+  noVideoFallback: boolean;
   // The path to the config file
   static readonly configFilePath = "./config.json";
 
@@ -64,6 +71,10 @@ export default class Config {
 
     this.directory = this._getPath(config.directory);
     this.mode = this._getMode(config.mode);
+    this.mirrors = this._getMirrors(config.mirrors);
+    this.noVideoFallback = Util.isBoolean(config.noVideoFallback)
+      ? (config.noVideoFallback as boolean)
+      : true;
   }
 
   // Generates a default config file if one does not already exist
@@ -78,6 +89,8 @@ export default class Config {
           logSize: 15,
           directory: "",
           mode: 1,
+          mirrors: DEFAULT_MIRRORS,
+          noVideoFallback: true,
         })
       );
     }
@@ -100,5 +113,18 @@ export default class Config {
   private _getPath(data: JsonValues): string {
     if (typeof data !== "string") return process.cwd();
     return path.isAbsolute(data) ? data : process.cwd();
+  }
+
+  private _getMirrors(data: JsonValues): DownloadMirror[] {
+    if (!Array.isArray(data)) return DEFAULT_MIRRORS;
+
+    const mirrors = data.filter((mirror): mirror is DownloadMirror => {
+      return (
+        typeof mirror === "string" &&
+        VALID_MIRRORS.has(mirror as DownloadMirror)
+      );
+    });
+
+    return mirrors.length ? Array.from(new Set(mirrors)) : DEFAULT_MIRRORS;
   }
 }

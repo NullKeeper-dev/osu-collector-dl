@@ -10,7 +10,7 @@ A program that automates the scraping, download, and beatmap collection generati
 ## Usage
 
 1. Run the `osu-collector-dl.exe` file from the downloaded folder.
-2. Enter the ID of the collection you want to download. To find the ID, look at the end of the Osu!Collector collection URL. For example, if the URL is https://osucollector.com/collections/44/speed-practice, you would enter 44 as the ID.
+2. Enter the ID or paste the full URL of the collection you want to download. For example, both `44` and `https://osucollector.com/collections/44/speed-practice` are valid. If paste does not work in your terminal, copy the ID or URL and press Enter at the prompt to read it from your clipboard.
 3. Select a working mode.
 4. Wait until the program finishes its task.
 
@@ -31,7 +31,9 @@ Below is the data stored in the config.json.
   "intervalCap": 50,
   "logSize": 15,
   "directory": "",
-  "mode": 1
+  "mode": 1,
+  "mirrors": ["catboy", "osuDirect"],
+  "noVideoFallback": true
 }
 ```
 
@@ -39,7 +41,7 @@ Below is the data stored in the config.json.
 
 > **parallel**
 >
-> - `true` Download multiple beatmap sets at the same time.
+> - `true` Download multiple beatmap sets at the same time. This is enabled by default.
 > - `false` Download only one beatmap set at a time.
 
 > **concurrency** (DO NOT CHANGE IF YOU ARE NOT SURE OF WHAT YOU ARE DOING)
@@ -70,11 +72,22 @@ Below is the data stored in the config.json.
 > - `2`: Download Beatmap Set + Generate .osdb
 > - `3`: Generate .osdb only.
 
+> **mirrors**
+>
+> - Download mirrors to try, in order.
+> - Supported values: `"catboy"` and `"osuDirect"`.
+> - If a beatmap set is unavailable on one mirror, the program will automatically try the next configured mirror.
+
+> **noVideoFallback**
+>
+> - `true`: Retry downloads without video when the mirror supports it.
+> - `false`: Only try the normal beatmap set download.
+
 ## FAQ
 
 ### I got "The request is blocked" or "Unable to get daily rate limit" when I run the program.
 
-> This program relies on third-party osu! beatmap mirrors for automated downloads. You are seeing this error because the provider has blocked your request, which usually happens due to regional restrictions, rate limits, or their specific terms of service. As an alternative, you can try using [Collection Manager](https://github.com/Piotrekol/CollectionManager) (CM) by Piotrekol to automate downloads directly from the official osu! website.
+> This program relies on third-party osu! beatmap mirrors for automated downloads. If one mirror blocks a beatmap set, cannot find it, or reports that it is unavailable, the program will try the next configured mirror and then try the no-video fallback when enabled. Beatmap sets that still cannot be downloaded are skipped and written to `ocdl-missing.log` in the collection folder so the rest of the collection can continue.
 
 ### It says "Retrying" during the download process, am I doing anything wrong?
 

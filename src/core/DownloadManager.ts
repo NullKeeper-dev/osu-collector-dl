@@ -9,16 +9,22 @@ import Manager from "./Manager";
 
 import PQueue from "p-queue";
 import { Requestor } from "./Requestor";
+import { DownloadMirror } from "../types";
+
+interface DownloadAttempt {
+  mirror: DownloadMirror;
+  noVideo: boolean;
+}
+
 // Define an interface for the events that the DownloadManager class can emit
 interface DownloadManagerEvents {
   downloaded: (beatMapSet: BeatMapSet) => void;
   error: (beatMapSet: BeatMapSet, e: unknown) => void;
   retrying: (beatMapSet: BeatMapSet) => void;
   downloading: (beatMapSet: BeatMapSet) => void;
+  skipped: (beatMapSet: BeatMapSet, reason: string) => void;
   rateLimited: () => void;
   dailyRateLimited: (beatMapSets: BeatMapSet[]) => void;
-  blocked: (beatMapSets: BeatMapSet[]) => void;
-  unavailable: (beatMapSets: BeatMapSet[]) => void;
   // End is emitted along with un-downloaded beatmap
   end: (beatMapSets: BeatMapSet[]) => void;
 }
@@ -66,10 +72,7 @@ export class DownloadManager extends EventEmitter implements DownloadManager {
   public bulkDownload(): void {
     // Add every download task to queue
     Manager.collection.beatMapSets.forEach((beatMapSet) => {
-      void this.queue.add(async () => {
-        await this._downloadFile(beatMapSet);
-        Manager.collection.beatMapSets.delete(beatMapSet.id);
-      });
+      this._queueDownload(beatMapSet);
     });
 
     // Emit if the download has been done
@@ -99,7 +102,7 @@ export class DownloadManager extends EventEmitter implements DownloadManager {
   // Downloads a single beatmap file
   private async _downloadFile(
     beatMapSet: BeatMapSet,
-    options: { retries: number; alt: boolean } = { retries: 3, alt: false } // Whether or not use the alternative mirror url
+    options: { retries: number } = { retries: 3 }
   ): Promise<boolean> {
     let isProbeRequest = false;
     if (this.testRequest) {
@@ -118,78 +121,92 @@ export class DownloadManager extends EventEmitter implements DownloadManager {
 
     // Request the download
     try {
-      this.emit("downloading", beatMapSet);
-      // Check if the specified directory exists
-      // This is placed here to prevent crashes while user editing folder
-      if (!this._checkIfDirectoryExists()) {
-        this.path = process.cwd();
-      }
-
-      const response = await Requestor.fetchDownloadCollection(beatMapSet.id, {
-        alternative: options.alt,
-      });
-
-      const xRateLimit = response.headers.get("x-ratelimit-remaining");
-      if (xRateLimit && parseInt(xRateLimit) <= 12) { // 12 is the Highest cost
-        if (!this.queue.isPaused) {
-          this.emit("rateLimited");
+      const skippedReasons: string[] = [];
+      for (const attempt of this._getDownloadAttempts()) {
+        this.emit("downloading", beatMapSet);
+        // Check if the specified directory exists
+        // This is placed here to prevent crashes while user editing folder
+        if (!this._checkIfDirectoryExists()) {
+          this.path = process.cwd();
         }
-      }
 
-      if (response.status === 429) {
-        // If user still get 429 after a test request (60 seconds wait), then check if user is daily rate limited
-        if (isProbeRequest) {
-          if (
-            !this.lastDownloadsLimitCheck ||
-            Date.now() - this.lastDownloadsLimitCheck > 5e3
-          ) {
-            // 5 seconds cooldown
-            this.lastDownloadsLimitCheck = Date.now();
-            const rateLimitStatus = await Requestor.checkRateLimitation();
-            if (rateLimitStatus === 0) {
-              this.emit("dailyRateLimited", this.getNotDownloadedBeatapSets());
-            } else {
-              this.remainingDownloadsLimit = rateLimitStatus;
-            }
+        const response = await Requestor.fetchDownloadCollection(
+          beatMapSet.id,
+          attempt
+        );
+
+        const rateLimitRemaining =
+          response.headers.get("x-ratelimit-remaining") ??
+          response.headers.get("ratelimit-remaining");
+        if (rateLimitRemaining && parseInt(rateLimitRemaining) <= 12) {
+          // 12 is the highest request cost.
+          if (!this.queue.isPaused) {
+            this.emit("rateLimited");
           }
         }
 
-        if (!this.queue.isPaused) {
-          this.emit("rateLimited");
+        if (response.status === 429) {
+          // If user still get 429 after a test request (60 seconds wait), then check if user is daily rate limited
+          if (isProbeRequest) {
+            if (
+              !this.lastDownloadsLimitCheck ||
+              Date.now() - this.lastDownloadsLimitCheck > 5e3
+            ) {
+              // 5 seconds cooldown
+              this.lastDownloadsLimitCheck = Date.now();
+              const rateLimitStatus = await Requestor.checkRateLimitation();
+              if (rateLimitStatus === 0) {
+                this.emit(
+                  "dailyRateLimited",
+                  this.getNotDownloadedBeatapSets()
+                );
+              } else {
+                this.remainingDownloadsLimit = rateLimitStatus;
+              }
+            }
+          }
+
+          if (!this.queue.isPaused) {
+            this.emit("rateLimited");
+          }
+          this._queueDownload(beatMapSet, options);
+          return false;
         }
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.queue.add(async () => await this._downloadFile(beatMapSet));
-        return false;
-      } else if (response.status === 403) {
-        this.emit("blocked", this.getNotDownloadedBeatapSets());
-        return false;
-      } else if (response.status === 451) {
-        this.emit("unavailable", this.getNotDownloadedBeatapSets());
-        return false;
-      } else if (response.status !== 200) {
-        throw `Status Code: ${response.status}`;
-      }
 
-      if (isProbeRequest) {
-        this.queue.concurrency = Manager.config.parallel
-          ? Manager.config.concurrency
-          : 1;
-      }
-
-      const fileName = this._getFilename(response);
-      const file = createWriteStream(_path.join(this.path, fileName));
-      if (response.body) {
-        for await (const chunk of response.body) {
-          file.write(chunk);
+        if ([403, 404, 451].includes(response.status)) {
+          skippedReasons.push(
+            this._formatAttemptFailure(attempt, response.status)
+          );
+          continue;
         }
-      } else {
-        throw "res.body is null";
-      }
-      file.end();
 
-      this.downloadedBeatMapSetSize++;
-      if (this.remainingDownloadsLimit != null) this.remainingDownloadsLimit--;
-      this.emit("downloaded", beatMapSet);
+        if (response.status !== 200) {
+          throw `Status Code: ${response.status}`;
+        }
+
+        this._restoreConcurrencyAfterProbe(isProbeRequest);
+
+        const fileName = this._getFilename(response);
+        const file = createWriteStream(_path.join(this.path, fileName));
+        if (response.body) {
+          for await (const chunk of response.body) {
+            file.write(chunk);
+          }
+        } else {
+          throw "res.body is null";
+        }
+        file.end();
+
+        this.downloadedBeatMapSetSize++;
+        if (this.remainingDownloadsLimit != null)
+          this.remainingDownloadsLimit--;
+        this.emit("downloaded", beatMapSet);
+        return true;
+      }
+
+      this._restoreConcurrencyAfterProbe(isProbeRequest);
+      this.emit("skipped", beatMapSet, skippedReasons.join(", "));
+      return false;
     } catch (e) {
       if (isProbeRequest) {
         this.testRequest = true;
@@ -199,14 +216,9 @@ export class DownloadManager extends EventEmitter implements DownloadManager {
       if (options.retries) {
         this.emit("retrying", beatMapSet);
 
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.queue.add(
-          async () =>
-            await this._downloadFile(beatMapSet, {
-              alt: options.retries === 1,
-              retries: options.retries - 1,
-            })
-        );
+        this._queueDownload(beatMapSet, {
+          retries: options.retries - 1,
+        });
       } else {
         // If there are no retries remaining,
         // "error" event will be emitted,
@@ -216,8 +228,46 @@ export class DownloadManager extends EventEmitter implements DownloadManager {
 
       return false;
     }
+  }
 
-    return true;
+  private _queueDownload(
+    beatMapSet: BeatMapSet,
+    options: { retries: number } = { retries: 3 }
+  ): void {
+    void this.queue.add(async () => {
+      const completed = await this._downloadFile(beatMapSet, options);
+      if (completed) {
+        Manager.collection.beatMapSets.delete(beatMapSet.id);
+      }
+    });
+  }
+
+  private _getDownloadAttempts(): DownloadAttempt[] {
+    const attempts: DownloadAttempt[] = [];
+    for (const mirror of Manager.config.mirrors) {
+      attempts.push({ mirror, noVideo: false });
+      if (Manager.config.noVideoFallback && mirror === "osuDirect") {
+        attempts.push({ mirror, noVideo: true });
+      }
+    }
+    return attempts;
+  }
+
+  private _formatAttemptFailure(
+    attempt: DownloadAttempt,
+    status: number
+  ): string {
+    return `${attempt.mirror}${
+      attempt.noVideo ? " no-video" : ""
+    }: HTTP ${status}`;
+  }
+
+  private _restoreConcurrencyAfterProbe(isProbeRequest: boolean): void {
+    if (isProbeRequest) {
+      this.queue.concurrency = Manager.config.parallel
+        ? Manager.config.concurrency
+        : 1;
+    }
   }
 
   public getNotDownloadedBeatapSets(): BeatMapSet[] {

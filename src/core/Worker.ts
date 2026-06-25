@@ -65,12 +65,12 @@ export default class Worker extends Manager {
       while (id === null) {
         this.monitor.update();
 
-        const result = parseInt(
-          this.monitor.awaitInput(Msg.INPUT_ID, {}, "None")
-        );
+        const input = this.monitor.awaitInput(Msg.INPUT_ID);
+        const clipboard = input ? null : Util.readClipboardText();
+        const result = Util.parseCollectionId(clipboard ?? input);
 
         // Check if result is valid
-        if (!isNaN(result)) {
+        if (result !== null) {
           id = result;
         }
         // Set retry to true to display the hint if user incorrectly inserted unwanted value
@@ -326,10 +326,7 @@ export default class Worker extends Manager {
         .on("dailyRateLimited", (beatMapSets) => {
           // For beatmap sets which were failed to download, generate a missing log to notice the user
           if (beatMapSets.length > 0) {
-            Logger.generateMissingLog(
-              Manager.collection.getCollectionFolderName(),
-              beatMapSets
-            );
+            Logger.generateMissingLog(downloadManager.path, beatMapSets);
           }
 
           this.monitor.setCondition({ remaining_downloads: 0 });
@@ -341,36 +338,21 @@ export default class Worker extends Manager {
             FreezeCondition.ERRORED
           );
         })
-        .on("blocked", (beatMapSets) => {
-          if (beatMapSets.length > 0) {
-            Logger.generateMissingLog(
-              Manager.collection.getCollectionFolderName(),
-              beatMapSets
-            );
-          }
-
-          this.monitor.freeze(Msg.REQUEST_BLOCKED, {}, FreezeCondition.ERRORED);
-        })
-        .on("unavailable", (beatMapSets) => {
-          if (beatMapSets.length > 0) {
-            Logger.generateMissingLog(
-              Manager.collection.getCollectionFolderName(),
-              beatMapSets
-            );
-          }
-
-          this.monitor.freeze(
-            Msg.RESOURCE_UNAVAILBALE,
-            {},
-            FreezeCondition.ERRORED
+        .on("skipped", (beatMapSet, reason) => {
+          this.monitor.appendDownloadLog(
+            Msg.SKIPPED_FILE,
+            {
+              id: beatMapSet.id.toString(),
+              name: beatMapSet.title ?? "",
+              reason,
+            },
+            DisplayTextColor.DANGER
           );
+          this.monitor.update();
         })
         .on("end", (beatMapSets) => {
           if (beatMapSets.length > 0) {
-            Logger.generateMissingLog(
-              Manager.collection.getCollectionFolderName(),
-              beatMapSets
-            );
+            Logger.generateMissingLog(downloadManager.path, beatMapSets);
           }
           this.monitor.freeze(Msg.DOWNLOAD_COMPLETED);
         })
@@ -391,14 +373,11 @@ export default class Worker extends Manager {
       const cleanUp = () => {
         const beatMapSets = downloadManager.getNotDownloadedBeatapSets();
         if (beatMapSets.length > 0) {
-          Logger.generateMissingLog(
-            Manager.collection.getCollectionFolderName(),
-            beatMapSets
-          );
+          Logger.generateMissingLog(downloadManager.path, beatMapSets);
         }
-      }
+      };
 
-      ['SIGINT', 'SIGTERM', 'SIGHUP'].forEach(signal => {
+      ["SIGINT", "SIGTERM", "SIGHUP"].forEach((signal) => {
         process.on(signal, () => cleanUp());
       });
 

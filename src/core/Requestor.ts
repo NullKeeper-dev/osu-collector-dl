@@ -1,6 +1,6 @@
 import { Response, fetch, request } from "undici";
 import { Constant } from "../struct/Constant";
-import { Json, Mode } from "../types";
+import { DownloadMirror, Json, Mode } from "../types";
 import OcdlError from "../struct/OcdlError";
 import { CollectionId } from "../struct/Collection";
 import { LIB_VERSION } from "../version";
@@ -11,7 +11,8 @@ interface FetchCollectionQuery {
 }
 
 interface DownloadCollectionOptions {
-  alternative: boolean;
+  mirror: DownloadMirror;
+  noVideo?: boolean;
 }
 
 interface FetchCollectionOptions {
@@ -61,13 +62,18 @@ export class Requestor {
   static async fetchDownloadCollection(
     id: CollectionId,
     options: DownloadCollectionOptions = {
-      alternative: true,
+      mirror: "catboy",
     }
   ): Promise<Response> {
-    const url =
-      (options.alternative
+    const url = new URL(
+      (options.mirror === "osuDirect"
         ? Constant.OsuMirrorAltApiUrl
-        : Constant.OsuMirrorApiUrl) + id.toString();
+        : Constant.OsuMirrorApiUrl) + id.toString()
+    );
+
+    if (options.noVideo) {
+      url.searchParams.set("noVideo", "1");
+    }
 
     const fetchOptions = {
       headers: { "User-Agent": `osu-collector-dl/v${LIB_VERSION}` },
@@ -124,8 +130,10 @@ export class Requestor {
     if (!data) return null;
 
     // Return remaining beatmaps that can be request to download
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-    return ((data as any).daily?.remaining?.downloads ?? null) as number | null;
+    return (
+      Requestor.getNestedNumber(data, ["daily", "remaining", "downloads"]) ??
+      Requestor.getNestedNumber(data, ["remaining"])
+    );
   }
 
   static async checkNewVersion(
@@ -154,5 +162,30 @@ export class Requestor {
     if (version === "v" + current_version) return null;
 
     return version;
+  }
+
+  private static getNestedNumber(data: unknown, path: string[]): number | null {
+    let current = data;
+    for (const key of path) {
+      if (
+        typeof current !== "object" ||
+        current === null ||
+        !Object.prototype.hasOwnProperty.call(current, key)
+      ) {
+        return null;
+      }
+      current = (current as Record<string, unknown>)[key];
+    }
+
+    if (typeof current === "number" && Number.isFinite(current)) {
+      return current;
+    }
+
+    if (typeof current === "string") {
+      const parsed = Number(current);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
   }
 }

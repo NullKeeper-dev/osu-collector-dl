@@ -1,4 +1,5 @@
 import https from "https";
+import { execFileSync } from "child_process";
 import { Constant } from "./struct/Constant";
 
 export default class Util {
@@ -9,6 +10,40 @@ export default class Util {
   static replaceForbiddenChars(str: string): string {
     const regex = /[\\/<>:"|?*]+/g;
     return str.replace(regex, "");
+  }
+
+  static parseCollectionId(input: string): number | null {
+    const trimmed = input.trim();
+    const rawId = /^\d+$/.exec(trimmed);
+    if (rawId) return Number(rawId[0]);
+
+    const urlId =
+      /(?:^|\/)collections\/(\d+)(?:[/?#]|$)/i.exec(trimmed) ??
+      /(?:^|\/)collections\/(\d+)$/i.exec("https://" + trimmed);
+    if (!urlId) return null;
+
+    return Number(urlId[1]);
+  }
+
+  static readClipboardText(): string | null {
+    if (process.platform !== "win32") return null;
+
+    try {
+      const text = execFileSync(
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-Command", "Get-Clipboard -Raw"],
+        {
+          encoding: "utf8",
+          timeout: 5000,
+          windowsHide: true,
+        }
+      );
+
+      const trimmed = text.trim();
+      return trimmed || null;
+    } catch {
+      return null;
+    }
   }
 
   static async isOnline(): Promise<boolean> {

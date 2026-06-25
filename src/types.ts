@@ -19,3 +19,5 @@ export enum ModeByte {
 export type WorkingMode = 1 | 2 | 3;
 
 export type Cursors = number[];
+
+export type DownloadMirror = "catboy" | "osuDirect";
